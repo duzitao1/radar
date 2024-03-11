@@ -1,0 +1,14 @@
+# 忽略.conda
+.conda/
+lightning_logs/
+mmwave_studio_02_01_01_00/
+out/
+__pycache__/
+附件/
+dataset/
+aio_radar.zip
+data.bin
+test.py
+开发文档.md
+README.md
+特征可视化.ipynb
