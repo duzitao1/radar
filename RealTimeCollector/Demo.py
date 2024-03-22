@@ -251,6 +251,81 @@ class Demo:
         print("剩余未处理帧数据数量：",frame_queue.qsize())
         print("demo_06 end")
     
+    # 模拟生成数据并直接从udp_queue中取数据用ABCnet预测手势
+    def demo_07(self):
+        
+        # 初始化队列
+        udp_queue = mp.Manager().Queue()
+        frame_queue = mp.Manager().Queue()
+        status = mp.Manager().Value('b', True)
+        
+        # 创建实时数据采集器
+        rtc = RealTimeCollector(ip_address='127.0.0.1', port=4098, output_file='data.bin',status=status)
+        
+        # 创建DC1000EVM模拟器进程
+        dca1000evm_simulator_process = mp.Process(target=rtc.dca1000evm_simulator, args=(
+            # "K:/手势识别数据集/2/2_3_Raw_0.bin",
+            # "K:/手势识别数据集/2/2_5_Raw_0.bin",
+            # "I:/aio/aio_radar/aio_gusture/dataset/2023_9_11/水杯快速向前向后",
+            # "I:/aio/aio_radar/aio_gusture/dataset/2023_9_17/4",
+            "K:/dataset/2024_3_7/2",
+            # "K:/手势识别数据集/2/",
+            10,
+            '127.0.0.1', 
+            4098,
+            20,
+            True))
+        # 创建UDP监听进程
+        udp_listener_process = mp.Process(target=rtc.udp_listener, args=(udp_queue,))
+        # 创建帧处理进程
+        frame_handler_process = mp.Process(target=rtc.udp_2ABCnet, args=(udp_queue,))
+        
+        
+        
+        dca1000evm_simulator_process.start()       # 启动DC1000EVM模拟器
+        udp_listener_process.start()               # 启动UDP监听器
+        frame_handler_process.start()              # 启动帧处理器
+
+        # 等待进程结束
+        try:
+            dca1000evm_simulator_process.join()
+        except KeyboardInterrupt:
+            dca1000evm_simulator_process.terminate()
+            udp_listener_process.terminate()
+            frame_handler_process.terminate()
+        
+        print("剩余未处理udp数据包数量：",udp_queue.qsize())
+        print("剩余未处理帧数据数量：",frame_queue.qsize())
+        print("demo_07 end")
+    
+    # 实时采集数据并直接从udp_queue中取数据用ABCnet预测手势
+    def demo_08(self):
+        
+        # 初始化队列
+        udp_queue = mp.Manager().Queue()
+        frame_queue = mp.Manager().Queue()
+        status = mp.Manager().Value('b', True)
+        
+        # 创建实时数据采集器
+        rtc = RealTimeCollector(ip_address='192.168.33.30', port=4098, output_file='data.bin',status=status)
+        
+        # 创建UDP监听进程
+        udp_listener_process = mp.Process(target=rtc.udp_listener, args=(udp_queue,))
+        # 创建帧处理进程
+        frame_handler_process = mp.Process(target=rtc.udp_2ABCnet, args=(udp_queue,))
+        
+        udp_listener_process.start()               # 启动UDP监听器
+        frame_handler_process.start()              # 启动帧处理器
+
+        # 等待进程结束
+        try:
+            udp_listener_process.join()
+        except KeyboardInterrupt:
+            frame_handler_process.terminate()
+        
+        print("剩余未处理udp数据包数量：",udp_queue.qsize())
+        print("剩余未处理帧数据数量：",frame_queue.qsize())
+        print("demo_07 end")
 
 if __name__ == "__main__":
     pass
@@ -260,4 +335,6 @@ if __name__ == "__main__":
     # demo.demo_03()
     # demo.demo_04()
     # demo.demo_05()
-    demo.demo_06()
+    # demo.demo_06()
+    # demo.demo_07()
+    demo.demo_08()
