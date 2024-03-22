@@ -67,7 +67,7 @@ class RealTimeCollector:
         self.angle_axis = np.arange(-self.Q/2, self.Q/2)                                            # 角度轴
         
         # 其他参数(暂时不用)
-        self.single_frame_size = self.n_TX * self.n_RX * self.n_samples * self.n_chirps * 4  # 单帧数据大小
+        self.single_frame_size = self.n_TX * self.n_RX * self.n_samples * self.n_chirps * 2
         self.single_frame_length = self.n_TX * self.n_RX * self.n_samples * self.n_chirps * 2  # 单帧数据长度
     
     def udp_listener(self, udp_queue=None):
@@ -212,7 +212,7 @@ class RealTimeCollector:
         with open(filename, 'ab') as f:
             f.write(data)
     
-    def process_frame(self, frame, clutter_removal=None):
+    def process_frame(self, frame, clutter_removal=None, is_squeeze=False):
         """
         对雷达帧数据进行处理。
 
@@ -245,9 +245,13 @@ class RealTimeCollector:
         
         angle_profile = np.fft.fftshift(np.fft.fft(speed_profile, self.Q, axis=0), axes=0)
         
+        if is_squeeze:
+            range_profile = np.squeeze(np.mean(np.abs(range_profile), axis=(0, 2))).T
+            speed_profile = np.squeeze(np.mean(np.abs(speed_profile), axis=(0, 1))).T
+            angle_profile = np.squeeze(np.mean(np.abs(angle_profile), axis=(1, 2))).T
+        
         return range_profile, speed_profile, angle_profile
 
-    # 从文件读取数据并且处理成range_profile, speed_profile, angle_profile
     def process_file(self, filename=None, clutter_removal=None):
         """
         从文件中读取雷达帧数据并对其进行处理。
@@ -270,6 +274,97 @@ class RealTimeCollector:
         frame = np.reshape(frame, (self.n_RX, self.n_samples, self.n_chirps, -1), order='F')
         
         return self.process_frame(frame, clutter_removal)
+    
+    # 读取udp数据并到指定的大小后进行ABCnet处理
+    def udp_2ABCnet(self, udp_queue=None):
+        """
+        将 UDP 数据转换为帧数据的函数。
+
+        参数:
+        - udp_data_queue(Queue): 用于存储 UDP 数据报的队列。
+        - frame_queue(Queue): 用于存储帧数据的队列。
+
+        返回:
+        Queue: 存储帧数据的队列
+
+        """
+        
+        from ABCnet import RadarGestureNet
+        from ABCnet import one_hot_to_label
+        
+        # 加载模型
+        model_path = r'K:\aio_radar\lightning_logs\version_70\checkpoints\epoch=74-step=750.ckpt'
+        model = RadarGestureNet.load_from_checkpoint(model_path).to("cpu")
+        
+        print("模型加载成功！")
+        
+        frame_data = []
+        frame_data_size = 0
+        
+        while self.status:
+            if udp_queue.qsize() == 0:
+                continue
+            else:
+                seq_num, payload_size, payload = self._udp_parser(udp_queue.get())
+                payload = np.frombuffer(payload, dtype=np.int16)
+                if frame_data_size + payload.size < self.single_frame_size * 30:
+                    frame_data_size += payload.size
+                    frame_data.append(payload)
+                else:
+                    print(udp_queue.qsize())
+                    # 取出刚好要填满的数据
+                    temp_len = self.single_frame_size*30 - frame_data_size
+                    temp_data = payload[:temp_len]
+                    
+                    payload = payload[temp_len:] 
+                    
+                    frame_data.append(temp_data)
+                    
+                    # 将数据连接起来
+                    frame = np.concatenate(frame_data)
+                    print("frame shape:", frame.shape)
+                    
+                    frame_data = []  # 清空列表
+                    frame_data_size = 0  # 清空数据大小
+                    
+                    frame_data.append(payload)  # 将剩下的数据暂存在列表中
+                    frame_data_size += payload.size
+
+                    # 重组数据
+                    frame = frame.reshape(self.numLanes*2, -1,order='F')
+                    frame = frame[[0,1,2,3],:] + 1j*frame[[4,5,6,7],:]
+
+                    data_radar = np.reshape(frame, (self.n_RX, self.n_samples, self.n_chirps, self.n_frames), order='F')
+
+                    print(data_radar.shape)  # (4, 64, 255, 30)
+
+                    # 特征提取
+                    range_profile, speed_profile, angle_profile = self.process_frame(data_radar,clutter_removal='avg')
+
+                    # 压缩维度
+                    range_profile = np.squeeze(np.mean(np.abs(range_profile), axis=(0, 2))).T
+                    speed_profile = np.squeeze(np.mean(np.abs(speed_profile), axis=(0, 1))).T
+                    angle_profile = np.squeeze(np.mean(np.abs(angle_profile), axis=(1, 2))).T
+                    
+                    range_profile = torch.tensor(range_profile, dtype=torch.float32)
+                    speed_profile = torch.tensor(speed_profile, dtype=torch.float32)
+                    angle_profile = torch.tensor(angle_profile, dtype=torch.float32)
+                    
+                    
+                    # 在第0维增加一个维度(如果是二维的)
+                    if len(range_profile.shape) == 2:
+                        range_profile = range_profile.unsqueeze(0)
+                    if len(speed_profile.shape) == 2:
+                        speed_profile = speed_profile.unsqueeze(0)
+                    if len(angle_profile.shape) == 2:
+                        angle_profile = angle_profile.unsqueeze(0)
+                    
+                    out = model(range_profile, speed_profile, angle_profile)
+                    confidence = out[0][one_hot_to_label(out)].item()
+                    if confidence > 0.95:
+                        print(out)
+                        print("Prediction:", one_hot_to_label(out), "!!!!!!!!!!!!!!!!!!")
+                    print("confidence:",confidence)
     
     def get_status(self):
         """获取状态变量"""
@@ -400,7 +495,7 @@ class RealTimeCollector:
                     # print("index:",index)
                     
                     self.udp_socket.sendto(data[i%len(data)], (ip_address, port))
-                    time.sleep(1/frame_rate/len(data))
+                    # time.sleep(1/frame_rate/len(data))
                     # if i%5 == 0:
                     #     time.sleep(0.001)
                 # time.sleep(1/frame_rate*10)
@@ -684,7 +779,6 @@ class RealTimeCollector:
                         if len(angle_profile.shape) == 2:
                             angle_profile = angle_profile.unsqueeze(0)
                         
-                        # 如果置信度大于0.4,则输出预测结果
                         out = model(range_profile, speed_profile, angle_profile)
                         confidence = out[0][one_hot_to_label(out)].item()
                         if confidence > 0.55:
