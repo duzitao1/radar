@@ -234,7 +234,7 @@ class Demo:
         # 创建UDP转帧进程
         udp_2frame_process = mp.Process(target=collector.udp_2frame, args=(udp_queue,frame_queue))
         # 创建帧处理进程
-        frame_handler_process = mp.Process(target=collector.ABCnet_process, args=(frame_queue,True))
+        frame_handler_process = mp.Process(target=collector.ABCnet_process, args=(frame_queue,udp_queue,True))
         
         udp_listener_process.start()               # 启动UDP监听器
         udp_2frame_process.start()                 # 启动UDP转帧器

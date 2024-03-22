@@ -148,6 +148,7 @@ class RealTimeCollector:
                     
                     payload = np.frombuffer(payload, dtype=np.int16)
                     if len(frame) + len(payload) >= self.single_frame_length:
+                        
                         temp_len = self.single_frame_length - len(frame)
                         frame = np.hstack((frame, payload[:temp_len]))
                         
@@ -156,6 +157,7 @@ class RealTimeCollector:
                         frame_queue.put(frame)
                         frame = np.array([],dtype=np.int16)
                         frame = np.hstack((frame, payload[temp_len:]))
+                        
                     else:
                         frame = np.hstack((frame, payload))
             except KeyboardInterrupt:
@@ -245,6 +247,30 @@ class RealTimeCollector:
         
         return range_profile, speed_profile, angle_profile
 
+    # 从文件读取数据并且处理成range_profile, speed_profile, angle_profile
+    def process_file(self, filename=None, clutter_removal=None):
+        """
+        从文件中读取雷达帧数据并对其进行处理。
+
+        Parameters:
+        - filename (str): 文件名。
+        - clutter_removal (str, optional): 静态杂波滤除的选项。可选值为 'avg'（平均滤波）或 'mti'（移动目标指示滤波）。默认为 None，不执行额外的滤波处理。
+
+        Returns:
+        - range_profile (numpy.ndarray): 距离特征。
+        - speed_profile (numpy.ndarray): 速度特征。
+        - angle_profile (numpy.ndarray): 角度特征。
+        """
+        with open(filename, 'rb') as f:
+            data = f.read()
+        
+        frame = np.frombuffer(data, dtype=np.int16)
+        frame = np.reshape(frame, (self.numLanes*2, -1), order='F')
+        frame = frame[[0, 1, 2, 3], :] + 1j * frame[[4, 5, 6, 7], :]
+        frame = np.reshape(frame, (self.n_RX, self.n_samples, self.n_chirps, -1), order='F')
+        
+        return self.process_frame(frame, clutter_removal)
+    
     def get_status(self):
         """获取状态变量"""
         return self.status
@@ -602,12 +628,13 @@ class RealTimeCollector:
             except KeyboardInterrupt:
                 break
     
-    def ABCnet_process(self,frame_queue=None, is_draw=False, model_path=None):
+    def ABCnet_process(self,frame_queue=None,udp_queue=None, is_draw=False, model_path=None):
         """
         帧数据处理函数。
 
         参数:
         - frame_queue: 存储帧数据的队列。如果未提供，将使用类属性中的默认队列。
+        - udp_queue: 存储UDP数据报的队列。如果未提供，将使用类属性中的默认队列。
         - is_draw: 是否绘制数据。默认为 False。
         - model_path: 模型路径。默认为 None。
 
@@ -622,20 +649,20 @@ class RealTimeCollector:
         if model_path is None:
             # model_path = r'K:\aio_radar\lightning_logs\version_45\checkpoints\epoch=74-step=75.ckpt'
             model_path = r'K:\aio_radar\lightning_logs\version_47\checkpoints\epoch=74-step=75.ckpt'
+            model_path = r'K:\aio_radar\lightning_logs\version_64\checkpoints\epoch=74-step=375.ckpt'
         model = RadarGestureNet.load_from_checkpoint(model_path).to("cpu")
+        
+        frame_list = np.zeros((4,64,255,30),dtype=complex)
         
         while self.get_status:
             try:
                 if frame_queue.empty():
                     continue
                 else:
-                        
                     # 每30帧进行一次预测
                     if frame_queue.qsize() < 30:
                         continue
                     else:
-                        frame_list = np.zeros((4,64,255,30),dtype=complex)
-                        
                         for i in range(0,30):
                             frame_list[:,:,:,i] = frame_queue.get()
                         
@@ -657,16 +684,16 @@ class RealTimeCollector:
                         if len(angle_profile.shape) == 2:
                             angle_profile = angle_profile.unsqueeze(0)
                         
-
-                        # print(model(range_profile, speed_profile, angle_profile))
-                        # print(one_hot_to_label(model(range_profile, speed_profile, angle_profile)))
                         # 如果置信度大于0.4,则输出预测结果
                         out = model(range_profile, speed_profile, angle_profile)
                         confidence = out[0][one_hot_to_label(out)].item()
-                        if confidence > 0.65:
+                        if confidence > 0.55:
                             print(out)
                             print("Prediction:", one_hot_to_label(out), "!!!!!!!!!!!!!!!!!!")
-                            print("remaining frame_queue size:",frame_queue.qsize())
+                        print("remaining udp_queue size:",udp_queue.qsize())
+                        print("remaining frame_queue size:",frame_queue.qsize())
+                        print("confidence:",confidence)
+                        
             except KeyboardInterrupt:
                 break
 
