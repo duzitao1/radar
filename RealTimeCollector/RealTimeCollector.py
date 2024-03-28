@@ -22,6 +22,8 @@ class RealTimeCollector:
         output_file='data.bin',
         status=1,
         debug=False,
+        is_bind=True,
+        
         ):
         self.status = status                    #状态变量
         self.debug = debug                      #调试位
@@ -55,7 +57,9 @@ class RealTimeCollector:
         # 初始化UDP套接字
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 40000)
-        self.udp_socket.bind((self.IP_ADDRESS, self.PORT))
+        
+        if is_bind:
+            self.udp_socket.bind((self.IP_ADDRESS, self.PORT))
         
         # 设置绘图中文显示
         plt.rcParams['font.sans-serif'] = ['SimHei']  # 使用中文黑体字体
@@ -232,12 +236,11 @@ class RealTimeCollector:
             frame = frame[:, :, :, np.newaxis]
         
         range_profile = np.fft.fft(frame, self.N, axis=1)
-        
         if clutter_removal == 'avg':
             range_profile = range_profile - np.mean(range_profile, axis=2)[:, :, np.newaxis, :]
+            
         elif clutter_removal == 'mti':
-            # [ ] 执行移动目标指示（MTI）滤波
-            pass
+            range_profile = range_profile - np.roll(range_profile, 1, axis=2)
         else:
             pass
         
@@ -294,13 +297,14 @@ class RealTimeCollector:
         
         # 加载模型
         model_path = r'K:\aio_radar\lightning_logs\version_70\checkpoints\epoch=74-step=750.ckpt'
+        model_path = r'K:\aio_radar\lightning_logs\version_83\checkpoints\epoch=74-step=1050.ckpt'
         model = RadarGestureNet.load_from_checkpoint(model_path).to("cpu")
         
         print("模型加载成功！")
         
         frame_data = []
         frame_data_size = 0
-        
+        t = time.time()
         while self.status:
             if udp_queue.qsize() == 0:
                 continue
@@ -311,7 +315,6 @@ class RealTimeCollector:
                     frame_data_size += payload.size
                     frame_data.append(payload)
                 else:
-                    print(udp_queue.qsize())
                     # 取出刚好要填满的数据
                     temp_len = self.single_frame_size*30 - frame_data_size
                     temp_data = payload[:temp_len]
@@ -359,12 +362,16 @@ class RealTimeCollector:
                     if len(angle_profile.shape) == 2:
                         angle_profile = angle_profile.unsqueeze(0)
                     
-                    out = model(range_profile, speed_profile, angle_profile)
-                    confidence = out[0][one_hot_to_label(out)].item()
-                    if confidence > 0.95:
-                        print(out)
-                        print("Prediction:", one_hot_to_label(out), "!!!!!!!!!!!!!!!!!!")
-                    print("confidence:",confidence)
+                    # out = model(range_profile, speed_profile, angle_profile)
+                    # confidence = out[0][one_hot_to_label(out)].item()
+                    # if confidence > 0.95:
+                    #     print(out)
+                    #     print("Prediction:", one_hot_to_label(out), "!!!!!!!!!!!!!!!!!!")
+                    # print("confidence:",confidence)
+                    # print("remaining udp_queue size:",udp_queue.qsize())
+                    
+                    print("time:",time.time()-t)
+                    t = time.time()
     
     def get_status(self):
         """获取状态变量"""
@@ -744,7 +751,7 @@ class RealTimeCollector:
         if model_path is None:
             # model_path = r'K:\aio_radar\lightning_logs\version_45\checkpoints\epoch=74-step=75.ckpt'
             model_path = r'K:\aio_radar\lightning_logs\version_47\checkpoints\epoch=74-step=75.ckpt'
-            model_path = r'K:\aio_radar\lightning_logs\version_64\checkpoints\epoch=74-step=375.ckpt'
+            model_path = r'K:\aio_radar\lightning_logs\version_83\checkpoints\epoch=74-step=1050.ckpt'
         model = RadarGestureNet.load_from_checkpoint(model_path).to("cpu")
         
         frame_list = np.zeros((4,64,255,30),dtype=complex)
