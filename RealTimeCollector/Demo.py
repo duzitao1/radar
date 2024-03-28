@@ -326,6 +326,42 @@ class Demo:
         print("剩余未处理udp数据包数量：",udp_queue.qsize())
         print("剩余未处理帧数据数量：",frame_queue.qsize())
         print("demo_07 end")
+    
+    # 模拟生成数据
+        # 模拟DCA1000EVM并使用AAnet预测手势
+    def demo_09(self):
+        
+        # 初始化队列
+        udp_queue = mp.Manager().Queue()
+        frame_queue = mp.Manager().Queue()
+        status = mp.Manager().Value('b', True)
+        
+        # 创建实时数据采集器
+        collector = RealTimeCollector(ip_address='127.0.0.1', port=4098, output_file='data.bin',status=status,is_bind=False)
+        
+        # 创建DC1000EVM模拟器进程
+        dca1000evm_simulator_process = mp.Process(target=collector.dca1000evm_simulator, args=(
+            # "K:/手势识别数据集/2/2_3_Raw_0.bin",
+            # "K:/手势识别数据集/2/2_5_Raw_0.bin",
+            # "I:/aio/aio_radar/aio_gusture/dataset/2023_9_11/水杯快速向前向后",
+            # "I:/aio/aio_radar/aio_gusture/dataset/2023_9_17/4",
+            "K:/dataset/2024_3_7/2",
+            # "K:/手势识别数据集/2/",
+            10,
+            '127.0.0.1', 
+            4098,
+            10,
+            True,
+            ))
+        
+        dca1000evm_simulator_process.start()       # 启动DC1000EVM模拟器
+
+        # 等待进程结束
+        dca1000evm_simulator_process.join()
+        
+        print("剩余未处理udp数据包数量：",udp_queue.qsize())
+        print("剩余未处理帧数据数量：",frame_queue.qsize())
+        print("demo_01 end")
 
 if __name__ == "__main__":
     pass
@@ -337,4 +373,5 @@ if __name__ == "__main__":
     # demo.demo_05()
     # demo.demo_06()
     # demo.demo_07()
-    demo.demo_08()
+    # demo.demo_08()
+    demo.demo_09()
