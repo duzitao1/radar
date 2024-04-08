@@ -24,7 +24,7 @@ encoder = nn.Sequential(
             nn.ReLU(),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(64, 2),
+            nn.Linear(64, 5),
         )
 
 class InceptionModule(nn.Module):
@@ -47,11 +47,92 @@ class InceptionModule(nn.Module):
         outputs = torch.cat(outputs, 1)  # Concatenate along the channel dimension
         return outputs
 
+
+# class RadarGestureNet(L.LightningModule):
+#     def __init__(self, gesture_class):
+#         super().__init__()
+#         self.gesture_class = gesture_class
+#         self.save_hyperparameters()
+        
+#         self.Icp1 = nn.Sequential(
+#             nn.LayerNorm([30, 64]),
+#             InceptionModule(30, 64)
+#         )
+        
+#         self.Icp2 = nn.Sequential(
+#             nn.LayerNorm([30, 64]),
+#             InceptionModule(30, 64)
+#         )
+#         self.Icp3 = nn.Sequential(
+#             nn.LayerNorm([30, 64]),
+#             InceptionModule(30, 64)
+#         )
+        
+#         self.decoder = nn.Sequential(
+#             nn.Flatten(),
+#             nn.Linear(4096, 512),
+#             nn.ReLU(),
+#             nn.Linear(512, 64),
+#             nn.ReLU(),
+#             nn.Linear(64, 4),
+#         )
+#     def forward(self, x1, x2, x3):
+#         embedding = self.Icp1(x1)+self.Icp2(x2)+self.Icp3(x3)
+        
+#         embedding = self.decoder(embedding)
+#         return embedding
+#     def training_step(self, batch, batch_idx):
+#         x1,x2,x3, y = batch
+#         z = self.forward(x1, x2, x3)
+#         criterion = nn.MSELoss()
+#         loss = criterion(z, y)
+#         self.log("train_loss", loss)
+#         train_accuracy = torch.sum(one_hot_to_label(z) == one_hot_to_label(y)).item() / len(y)
+#         self.log("train_accuracy", train_accuracy)
+#         return loss
+    
+#     def validation_step(self, batch, batch_idx):
+#         x1,x2,x3, y = batch
+#         z = self.forward(x1, x2, x3)
+#         criterion = nn.MSELoss()
+#         val_loss = criterion(z, y)
+#         self.log("val_loss", val_loss)
+    
+#     def test_step(self, batch, batch_idx):
+#         x1,x2,x3, y = batch
+#         z = self.forward(x1, x2, x3)
+#         criterion = nn.MSELoss()
+        
+#         test_loss = criterion(z, y)
+#         self.log("test_loss", test_loss)
+        
+#         accuracy = torch.sum(one_hot_to_label(z) == one_hot_to_label(y)).item() / len(y)
+#         self.log("accuracy", accuracy)
+        
+#     def predict_step(self, batch, batch_idx, dataloader_idx=0):
+#         return self(batch)
+#     def configure_optimizers(self):
+#         optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+#         return optimizer
+
+class ABCModule(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(ABCModule, self).__init__()
+        self.branch3x3 = nn.Conv1d(in_channels, out_channels, kernel_size=5, padding=1)
+
+    def forward(self, x):
+        branch3x3 = self.branch3x3(x)
+        
+        outputs = [branch3x3]
+        
+        outputs = torch.cat(outputs, 1)  # Concatenate along the channel dimension
+        return outputs
+
 class RadarGestureNet(L.LightningModule):
     def __init__(self, gesture_class):
         super().__init__()
         self.gesture_class = gesture_class
-        self.save_hyperparameters()
+        self.save_hyperparameters('gesture_class')
         
         self.Icp1 = nn.Sequential(
             nn.LayerNorm([30, 64]),
@@ -73,7 +154,8 @@ class RadarGestureNet(L.LightningModule):
             nn.ReLU(),
             nn.Linear(512, 64),
             nn.ReLU(),
-            nn.Linear(64, 2),
+            nn.Linear(64, 10),
+            nn.Softmax(dim=1)
         )
     def forward(self, x1, x2, x3):
         embedding = self.Icp1(x1)+self.Icp2(x2)+self.Icp3(x3)

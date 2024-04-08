@@ -338,7 +338,6 @@ class Demo:
         
         # 创建实时数据采集器
         collector = RealTimeCollector(ip_address='127.0.0.1', port=4098, output_file='data.bin',status=status,is_bind=False)
-        
         # 创建DC1000EVM模拟器进程
         dca1000evm_simulator_process = mp.Process(target=collector.dca1000evm_simulator, args=(
             # "K:/手势识别数据集/2/2_3_Raw_0.bin",
@@ -347,7 +346,7 @@ class Demo:
             # "I:/aio/aio_radar/aio_gusture/dataset/2023_9_17/4",
             "K:/dataset/2024_3_7/2",
             # "K:/手势识别数据集/2/",
-            10,
+            100,
             '127.0.0.1', 
             4098,
             10,
